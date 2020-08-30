@@ -7,6 +7,8 @@ class DomElements {
         this.addEventToNewTaskForm();
         this.addEventToShowNewOperationForm();
         this.addEventToSubmitOperationForm();
+        this.addShowAddOperationTime();
+        this.addFinishTaskEvent();
     }
 
     loadAll() {
@@ -26,6 +28,9 @@ class DomElements {
         let taskSectionEl = document.createElement("section");
         taskSectionEl.classList.add("task");
         taskSectionEl.dataset.id = task.id;
+        taskSectionEl.dataset.title = task.title;
+        taskSectionEl.dataset.description = task.description;
+        taskSectionEl.dataset.status = task.status;
 
         let taskHeaderEl = document.createElement("h2");
         taskHeaderEl.innerText = task.title;
@@ -91,9 +96,49 @@ class DomElements {
         let operationEl = document.createElement("div");
         operationEl.classList.add("list-group-item", "task-operation");
         operationEl.dataset.id = operation.id;
+
+        operationEl.dataset.text = operation.description;
+        operationEl.dataset.time = operation.timeSpent;
+
         operationEl.innerText = operation.description;
         taskOperationsElement.appendChild(operationEl);
+
+        // Pobieramy informacje o statusie zadania
+
+        const taskStatus = operationEl.parentElement.dataset.status;
+
+        if (taskStatus === "open") {
+            // Formularz
+            let addTimeManualInput = document.createElement("input");
+            addTimeManualInput.classList.add("float-right", "add-time-input", "d-none");
+            addTimeManualInput.setAttribute("name", "time");
+            addTimeManualInput.setAttribute("placeholder", "Type in spend minutes");
+            operationEl.appendChild(addTimeManualInput);
+
+            // Przycisk
+            let manualTimeButton = document.createElement("a");
+            manualTimeButton.classList.add(
+                "btn",
+                "btn-primary",
+                "float-right",
+                "add-time"
+            );
+            manualTimeButton.innerText = "Add time";
+            operationEl.appendChild(manualTimeButton);
+
+            // Informacja o czasie
+            let timeSpentEl = document.createElement("span");
+            timeSpentEl.classList.add("badge", "badge-primary", "badge-pill");
+            timeSpentEl.innerText = this.timeSpentToString(operation.timeSpent);
+            operationEl.appendChild(timeSpentEl);
+            if (operation.timeSpent <= 0) {
+                timeSpentEl.classList.add("d-none");
+            }
+        }
     }
+
+
+
     addEventToLoadOperations(taskOperationsElement) {
         // Dostajemy się do h2, do którego podepniemy zdarzenie 'click'
         const h2Elem = taskOperationsElement.firstElementChild;
@@ -149,7 +194,7 @@ class DomElements {
             "list-group-item",
             "task-operation",
             "task-operation-form",
-            "d-none"
+            // "block"
         );
         taskOperationsElement.appendChild(operationEl);
 
@@ -204,6 +249,109 @@ class DomElements {
         });
     }
 
+    timeSpentToString(timeSpent) {
+        let hours = Math.floor(timeSpent / 3600);
+        let minutes = Math.floor((timeSpent % 3600) / 60);
+        let seconds = (timeSpent % 3600) % 60;
+
+        return `${hours}h ${minutes}m ${seconds}s`;
+    }
+
+    addShowAddOperationTime() {
+        document.querySelector("div.todo-app").addEventListener("click", (e) => {
+            if (
+                e.target.classList.contains("add-time") &&
+                !e.target.classList.contains("btn-success")
+            ) {
+                e.preventDefault();
+                let element = e.target;
+                element.previousElementSibling.classList.remove("d-none");
+                element.innerText = "Save";
+                element.classList.add("btn-success");
+            } else if (
+                e.target.classList.contains("add-time") &&
+                e.target.classList.contains("btn-success")
+            ) {
+                e.preventDefault();
+                let element = e.target;
+
+                const taskId = element.parentElement.parentElement.parentElement.dataset.id;
+                const operationId = element.parentElement.dataset.id;
+                const timeToAdd = parseInt(element.previousElementSibling.value) * 60;
+
+                const description = element.parentElement.dataset.text;
+                const currentTime = parseInt(element.parentElement.dataset.time);
+
+                const operation = new Operation(description, currentTime + timeToAdd);
+                operation.id = operationId;
+
+                this.apiService.updateOperation(
+                    operation,
+                    (operationsUpdated) => {
+                        console.log(operationsUpdated);
+                        element.parentElement.dataset.time = operationsUpdated.timeSpent;
+                        this.updateOperationTimer(
+                            operationsUpdated.timeSpent,
+                            element.parentElement
+                        );
+                    },
+                    (err) => console.log(err)
+                );
+
+
+                element.previousElementSibling.classList.add("d-none");
+                element.previousElementSibling.value = "";
+                element.innerText = "Add time";
+                element.classList.remove("btn-success");
+            }
+        });
+    }
+
+    updateOperationTimer(time, operationElement) {
+        if (time > 0) {
+            operationElement.querySelector(
+                "span.badge"
+            ).innerText = this.timeSpentToString(time);
+            operationElement.querySelector("span.badge").classList.remove("d-none");
+        } else {
+            operationElement.querySelector("span.badge").innerText = 0;
+            operationElement.querySelector("span.badge").classList.add("d-none");
+        }
+    }
+
+
+    addFinishTaskEvent() {
+        document.querySelector("div.todo-app").addEventListener("click", (e) => {
+            if (e.target.classList.contains("close-task")) {
+                e.preventDefault();
+                let element = e.target;
+
+                //Pobranie informacje o zadaniu
+                const taskElem = element.parentElement.parentElement.parentElement;
+                const taskId = taskElem.dataset.id;
+                const taskTitle = taskElem.dataset.title;
+                const taskDescription = taskElem.dataset.description;
+
+                //Utworzenie obiektu Task
+                const task = new Task(taskTitle, taskDescription);
+                task.id = taskId;
+                task.status = "closed";
+
+                //Aktualizacja
+                this.apiService.updateTask(
+                    task,
+                    (updatedTask) => {
+                        // Dodajmy klasę odpowiedzialną za ukrycie przycisków, które już były widoczne
+                        element.nextElementSibling.classList.add("d-none");
+                        element.parentElement.parentElement.parentElement
+                            .querySelectorAll(".btn", "input")
+                            .forEach((el) => el.classList.add("d-none"));
+                    },
+                    (err) => console.log(err)
+                );
+            }
+        });
+    }
 
 
 }
